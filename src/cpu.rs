@@ -57,6 +57,30 @@ pub struct CPU {
 impl CPU {
     pub fn new(rom_contents: Vec<u8>) -> Self {
         let mut memory: [u8; 4096] = [0x0; 4096];
+
+        let fonts = [
+            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+            0x20, 0x60, 0x20, 0x20, 0x70, // 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+            0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+        ];
+
+        for i in 0x0..=0x80 {
+            memory[i] = fonts[i];
+        }
+
         let mut co = 0;
         rom_contents.iter().for_each(|e| {
             memory[0x200 + co] = *e;
@@ -144,6 +168,7 @@ impl CPU {
 
             _ => {
                 println!("INSTRUCTION BYTE {:01X?} NOT FOUND!", instruction.nibbles);
+                self.pc += INSTRUCTION_SIZE;
             }
         }
     }
@@ -160,13 +185,13 @@ impl CPU {
 
     fn handle_return(&mut self) {
         println!("RETURN FROM SUBROUTINE");
-        // TODO: Implement Stack Pointer.
-        // Pop SP and set PC to the top value.
+        let prev_pc = self.stack.pop().expect("stack is empty!");
+        self.pc = prev_pc;
     }
 
     fn handle_call_subroutine(&mut self, location: usize) {
         println!("CALL A SUBROUTING AT {:03X?}", location);
-        // TODO: Push old PC to SP, set current SP to location.
+        self.stack.push(self.pc + INSTRUCTION_SIZE);
         self.pc = location;
     }
 
@@ -388,9 +413,4 @@ impl CPU {
         }
         self.pc += INSTRUCTION_SIZE;
     }
-
-    /*
-    println!("STORE AND LOAD MEMORY 1 (TBD). REGISTER V{:01X}", x),
-    println!("STORE AND LOAD MEMORY 2 (TBD). REGISTER V{:01X}", x),
-    */
 }
