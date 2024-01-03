@@ -1,8 +1,5 @@
-use std::{os, io};
-
 use crate::graphics::Graphics;
 
-use piston_window::*;
 use rand::Rng;
 
 const INSTRUCTION_SIZE: usize = 2;
