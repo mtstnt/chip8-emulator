@@ -1,3 +1,8 @@
+use std::{os, io};
+
+use crate::graphics::Graphics;
+
+use piston_window::*;
 use rand::Rng;
 
 const INSTRUCTION_SIZE: usize = 2;
@@ -52,6 +57,9 @@ pub struct CPU {
 
     // SP
     stack: Vec<usize>,
+
+    // Graphics and window manager.
+    graphics: Graphics,
 }
 
 impl CPU {
@@ -77,7 +85,7 @@ impl CPU {
             0xF0, 0x80, 0xF0, 0x80, 0x80  // F
         ];
 
-        for i in 0x0..=0x80 {
+        for i in 0..fonts.len() {
             memory[i] = fonts[i];
         }
 
@@ -95,6 +103,7 @@ impl CPU {
             delay_timer: 0x0,
             memory,
             stack: vec![],
+            graphics: Graphics::new(),
         }
     }
 
@@ -102,6 +111,10 @@ impl CPU {
         loop {
             let instr = &self.memory[self.pc..(self.pc + INSTRUCTION_SIZE)];
             self.process_instruction(Instruction::new(instr[0], instr[1]));
+            if self.graphics.render_window().is_none() {
+                println!("Terminated successfully.");
+                break;
+            }
         }
     }
 
@@ -174,41 +187,42 @@ impl CPU {
     }
 
     fn handle_clear_screen(&mut self) {
-        println!("CLEAR SCREEN!!!");
+        println!("CLS");
+        self.graphics.clear_pixels();
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_jump(&mut self, jump_addr: usize) {
-        println!("JUMP TO {:03X?}", jump_addr);
+        // println!("JMP {:03X?}", jump_addr);
         self.pc = jump_addr;
     }
 
     fn handle_return(&mut self) {
-        println!("RETURN FROM SUBROUTINE");
+        println!("RET");
         let prev_pc = self.stack.pop().expect("stack is empty!");
         self.pc = prev_pc;
     }
 
     fn handle_call_subroutine(&mut self, location: usize) {
-        println!("CALL A SUBROUTING AT {:03X?}", location);
+        println!("CALL {:03X?}", location);
         self.stack.push(self.pc + INSTRUCTION_SIZE);
         self.pc = location;
     }
 
     fn handle_set_register_literal(&mut self, register: u8, value: u8) {
-        println!("SET REGISTER V{:01X?} WITH VALUE {:02X?}", register, value);
+        println!("SET {:02X?} ({}) V{:01X?}", value, value, register);
         self.registers[register as usize] = value;
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_add_into_register(&mut self, register: u8, value: u8) {
-        println!("ADD VALUE {:02X?} TO REGISTER V{:01X?}. NO CARRY EFFECTS HERE.", value, register);
-        self.registers[register as usize] += value;
+        println!("ADD {:02X?} ({}) TO REGISTER V{:01X?}. NO CARRY EFFECTS HERE.", value, value, register);
+        self.registers[register as usize] = u8::wrapping_add(self.registers[register as usize], value);
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_skip_on_equal(&mut self, register: u8, value: u8) {
-        println!("SKIP IF V{:01X?} EQUALS TO {:02X?}", register, value);
+        // println!("SKIP IF V{:01X?} EQUALS TO {:02X?}", register, value);
         self.pc += INSTRUCTION_SIZE;
         if self.registers[register as usize] == value {
             self.pc += INSTRUCTION_SIZE;
@@ -216,7 +230,7 @@ impl CPU {
     }
 
     fn handle_skip_on_not_equal(&mut self, register: u8, value: u8) {
-        println!("SKIP IF V{:01X?} IS NOT EQUAL TO {:02X?}", register, value);
+        // println!("SKIP IF V{:01X?} IS NOT EQUAL TO {:02X?}", register, value);
         self.pc += INSTRUCTION_SIZE;
         if self.registers[register as usize] != value {
             self.pc += INSTRUCTION_SIZE;
@@ -224,7 +238,7 @@ impl CPU {
     }
 
     fn handle_skip_on_equal_register(&mut self, register1: u8, register2: u8) {
-        println!("SKIP IF V{:01X?} IS EQUAL TO V{:02X?}", register1, register2);
+        // println!("SKIP IF V{:01X?} IS EQUAL TO V{:02X?}", register1, register2);
         self.pc += INSTRUCTION_SIZE;
         if self.registers[register1 as usize] == self.registers[register2 as usize] {
             self.pc += INSTRUCTION_SIZE;
@@ -232,7 +246,7 @@ impl CPU {
     }
 
     fn handle_skip_on_not_equal_register(&mut self, register1: u8, register2: u8) {
-        println!("SKIP IF V{:01X?} IS NOT EQUAL TO V{:01X?}", register1, register2);
+        // println!("SKIP IF V{:01X?} IS NOT EQUAL TO V{:01X?}", register1, register2);
         self.pc += INSTRUCTION_SIZE;
         if self.registers[register1 as usize] != self.registers[register2 as usize] {
             self.pc += INSTRUCTION_SIZE;
@@ -240,31 +254,31 @@ impl CPU {
     }
 
     fn handle_set_register(&mut self, register1: u8, register2: u8) {
-        println!("SET VALUE V{:01X?} WITH VALUE OF V{:01X?}", register1, register2);
+        println!("SET V{:01X?} <= V{:01X?}", register1, register2);
         self.registers[register1 as usize] = self.registers[register2 as usize];
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_binary_or(&mut self, register1: u8, register2: u8) {
-        println!("V{:01x?} | V{:01x?}. SET TO V{:01X?}", register1, register2, register1);
+        // println!("V{:01x?} | V{:01x?}. SET TO V{:01X?}", register1, register2, register1);
         self.registers[register1 as usize] |= self.registers[register2 as usize];
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_binary_and(&mut self, register1: u8, register2: u8) {
-        println!("V{:01X?} & V{:01X?}. SET TO V{:01X?}", register1, register2, register1);
+        // println!("V{:01X?} & V{:01X?}. SET TO V{:01X?}", register1, register2, register1);
         self.registers[register1 as usize] &= self.registers[register2 as usize];
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_binary_xor(&mut self, register1: u8, register2: u8) {
-        println!("V{:01X?} ^ V{:01X?}. SET TO V{:01X?}", register1, register2, register1);
+        // println!("V{:01X?} ^ V{:01X?}. SET TO V{:01X?}", register1, register2, register1);
         self.registers[register1 as usize] ^= self.registers[register2 as usize];
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_add_register_with_carry(&mut self, register1: u8, register2: u8) {
-        println!("V{:01X?} + V{:01X?}. SET TO V{:01X?} WITH CARRY TO VF", register1, register2, register1);
+        // println!("V{:01X?} + V{:01X?}. SET TO V{:01X?} WITH CARRY TO VF", register1, register2, register1);
         let reg1 = self.registers[register1 as usize];
         let reg2 = self.registers[register2 as usize];
 
@@ -280,104 +294,129 @@ impl CPU {
     }
 
     fn handle_subtraction(&mut self, register1: u8, register2: u8, store_register: u8) {
-        println!("V{:01X?} + V{:01X?}. SET TO V{:01X?} WITH CARRY TO VF", register1, register2, store_register);
+        // println!("V{:01X?} + V{:01X?}. SET TO V{:01X?} WITH CARRY TO VF", register1, register2, store_register);
         let reg1 = self.registers[register1 as usize];
         let reg2 = self.registers[register2 as usize];
 
         if reg1 >= reg2 {
-            self.registers[0xF] = 1;
+            self.registers[0xF - 1] = 1;
         } else {
-            self.registers[0xF] = 0;
+            self.registers[0xF - 1] = 0;
         }
-        self.registers[store_register as usize] = reg1 - reg2;
+        self.registers[store_register as usize] = u8::wrapping_sub(reg1, reg2);
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_shift(&mut self, register1: u8, _: u8, direction_right: bool) {
         // Using modern CHIP8 specs. We ignore Y completely.
         if direction_right {
-            println!("SHIFT RIGHT V{:01X?} BY 1 BIT", register1);
+            // println!("SHIFT RIGHT V{:01X?} BY 1 BIT", register1);
             self.registers[register1 as usize] >>= 1;
         } else {
-            println!("SHIFT LEFT V{:01X?} BY 1 BIT", register1);
+            // println!("SHIFT LEFT V{:01X?} BY 1 BIT", register1);
             self.registers[register1 as usize] <<= 1;
         }
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_set_index_register(&mut self, value: usize) {
-        println!("SET INDEX REGISTER TO {:03X?}", value);
+        println!("LD {:03X?} ({}) I", value, value);
         self.index_register = value;
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_jump_with_offset(&mut self, location: usize) {
-        println!("JUMP WITH OFFSET {:03X?}", location);
+        // println!("JUMP WITH OFFSET {:03X?}", location);
         self.pc += location + self.registers[0] as usize;
     }
 
     fn handle_generate_random_number(&mut self, register: u8, value: u8) {
-        println!("GENERATE RANDOM NUMBER THEN ANDS IT WITH {:02X?} AND PUTS IT IN V{:01X?}", register, value);
+        // println!("GENERATE RANDOM NUMBER THEN ANDS IT WITH {:02X?} AND PUTS IT IN V{:01X?}", register, value);
         let mut rnd = rand::thread_rng();
         self.registers[register as usize] = rnd.gen::<u8>() & value;
         self.pc += INSTRUCTION_SIZE;
     }
 
-    fn handle_display(&mut self, sprite_size: u8, x: u8, y: u8) {
-        println!("DISPLAY {:01X?} PIXEL TALL SPRITE FROM I REGISTER WITH X IN V{:01X?} AND Y IN V{:01X?}", sprite_size, x, y);
-        // TODO: Implement GPU first then do this shit.
+    fn handle_display(&mut self, sprite_size: u8, x_register_source: u8, y_register_source: u8) {
+        println!("DRW V{:01X?} V{:01X?} {:01X?} ", x_register_source, y_register_source, sprite_size);
+
+        let x = self.registers[x_register_source as usize];
+        let y = self.registers[y_register_source as usize];
+
+        for sprite_row in 0..sprite_size {
+            let byte = self.memory[self.index_register + sprite_row as usize];
+            for sprite_col in 0..8 {
+                let sprite_value = (byte & (1 << 7 - sprite_col)) != 0;
+
+                let xpos = (x + sprite_col as u8) % 64;
+                let ypos = (y + sprite_row as u8) % 32;
+
+                let old_value = self.graphics.get_pixel(xpos, ypos);
+                let xor_value = old_value ^ sprite_value;
+
+                // If any pixel is erased, set VF to 1, else 0.
+                if old_value && !sprite_value {
+                    self.registers[0xF - 1] = 1;
+                } else {
+                    self.registers[0xF - 1] = 0;
+                }
+
+                self.graphics.set_pixel(xpos, ypos, xor_value);
+                // println!("{:?}, {}", (xpos, ypos), xor_value);
+            }
+        }
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_skip_on_key(&mut self, register: u8, should_be_pressed: bool) {
         if should_be_pressed {
-            println!("SKIP 1 INSTRUCTION IF KEY IN V{:01X?} IS PRESSED.", register);
+            // println!("SKIP 1 INSTRUCTION IF KEY IN V{:01X?} IS PRESSED.", register);
             // TODO: Handle check if key is pressed.
         } else {
-            println!("SKIP 1 INSTRUCTION IF KEY IN V{:01X?} IS NOT PRESSED.", register);
+            // println!("SKIP 1 INSTRUCTION IF KEY IN V{:01X?} IS NOT PRESSED.", register);
             // TODO: Handle check if key is not pressed.
         }
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_get_delay_timer(&mut self, register: u8) {
-        println!("SET VALUE OF V{:01X?} TO VALUE OF DELAY TIMER", register);
+        // println!("SET VALUE OF V{:01X?} TO VALUE OF DELAY TIMER", register);
         self.registers[register as usize] = self.delay_timer;
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_set_delay_timer(&mut self, register: u8) {
-        println!("SET DELAY TIMER TO VALUE IN V{:01X?}", register);
+        // println!("SET DELAY TIMER TO VALUE IN V{:01X?}", register);
         self.delay_timer = self.registers[register as usize];
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_set_sound_timer(&mut self, register: u8) {
-        println!("SET SOUND TIMER TO VALUE IN V{:01X?}", register);
+        // println!("SET SOUND TIMER TO VALUE IN V{:01X?}", register);
         self.sound_timer = self.registers[register as usize];
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_add_into_index_register(&mut self, register: u8) {
-        println!("ADD VALUE V{:01X?} AND ADD TO REGISTER I", register);
+        // println!("ADD VALUE V{:01X?} AND ADD TO REGISTER I", register);
         self.index_register += self.registers[register as usize] as usize;
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_wait_for_key(&mut self, register: u8) {
-        println!("WAIT FOR KEY INPUT AND SET TO V{:01X?}", register);
+        // println!("WAIT FOR KEY INPUT AND SET TO V{:01X?}", register);
         // TODO: Implement input key checker.
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_set_index_register_to_addr(&mut self, register: u8) {
-        println!("SET INDEX REGISTER I TO V{:01X?} TO CHARACTER IN MEMORY", register);
+        // println!("SET INDEX REGISTER I TO V{:01X?} TO CHARACTER IN MEMORY", register);
         self.index_register = self.registers[register as usize] as usize;
         self.pc += INSTRUCTION_SIZE;
     }
 
     fn handle_number_division(&mut self, register: u8) {
-        println!("CONVERT VALUE OF V{:01X?} TO 3 DECIMAL DIGITS, STORING AT INDEX REGISTER I", register);
+        // println!("CONVERT VALUE OF V{:01X?} TO 3 DECIMAL DIGITS, STORING AT INDEX REGISTER I", register);
         let mut reg = self.registers[register as usize];
         let third = reg % 10;
         reg /= 10;
@@ -394,7 +433,7 @@ impl CPU {
     }
 
     fn handle_store_memory(&mut self, register: u8) {
-        println!("STORE MEMORY FROM V0 TO V{:01X?} TO INDEX REGISTER", register);
+        // println!("STORE MEMORY FROM V0 TO V{:01X?} TO INDEX REGISTER", register);
         let mut addr = self.index_register;
         for (_, value) in self.registers[0..=(register as usize)].iter().take(register as usize + 1).enumerate() {
             self.memory[addr] = *value;
@@ -404,7 +443,7 @@ impl CPU {
     }
 
     fn handle_load_memory(&mut self, register: u8) {
-        println!("LOAD MEMORY FROM INDEX REGISTER TO V0 TO V{:01X?}", register);
+        // println!("LOAD MEMORY FROM INDEX REGISTER TO V0 TO V{:01X?}", register);
         let mut addr = self.index_register;
         for i in 0..self.registers.len() {
             // TODO: Store to memory.
